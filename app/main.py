@@ -1,3 +1,4 @@
+import logging
 import os
 import sqlite3
 from contextlib import asynccontextmanager
@@ -9,9 +10,12 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
+from app.telemetry import configure_telemetry, shutdown_telemetry, tracer
+
 
 DB_PATH = Path(os.getenv("ORDER_DB_PATH", "data/orders.db"))
 STATUSES = {"received", "preparing", "shipped", "delivered"}
+logger = logging.getLogger(__name__)
 
 
 def connect():
@@ -72,11 +76,13 @@ class StatusUpdate(BaseModel):
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    providers = configure_telemetry()
     init_db()
     yield
+    shutdown_telemetry(*providers)
 
 
-app = FastAPI(title="Order Tracker", lifespan=lifespan)
+app = FastAPI(title="Order Tracker", lifespan=lifespan, telemetry={"auto_configure": False})
 
 
 @app.get("/")
@@ -93,18 +99,25 @@ def health():
 
 @app.get("/api/orders")
 def list_orders():
-    with connect() as db:
-        rows = db.execute("SELECT * FROM orders ORDER BY created_at DESC").fetchall()
-    return [as_dict(row) for row in rows]
+    with tracer.start_as_current_span("order.list_lookup") as span:
+        with connect() as db:
+            rows = db.execute("SELECT * FROM orders ORDER BY created_at DESC").fetchall()
+        span.set_attribute("order.count", len(rows))
+        logger.info("Listed %d orders", len(rows))
+        return [as_dict(row) for row in rows]
 
 
 @app.get("/api/orders/{order_id}")
 def get_order(order_id: str):
-    with connect() as db:
-        row = db.execute("SELECT * FROM orders WHERE id = ?", (order_id,)).fetchone()
-    if row is None:
-        raise HTTPException(404, "Order not found")
-    return order_detail(row)
+    with tracer.start_as_current_span("order.lookup", attributes={"order.id": order_id}) as span:
+        with connect() as db:
+            row = db.execute("SELECT * FROM orders WHERE id = ?", (order_id,)).fetchone()
+        span.set_attribute("order.found", row is not None)
+        if row is None:
+            logger.info("Order lookup miss for order_id=%s", order_id)
+            raise HTTPException(404, "Order not found")
+        logger.info("Order lookup hit for order_id=%s", order_id)
+        return order_detail(row)
 
 
 @app.post("/api/orders", status_code=201)
