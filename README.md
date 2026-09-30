@@ -34,3 +34,9 @@ Run tests with `uv run --frozen pytest -q`. Stop the app with `docker compose do
 | PATCH | `/api/orders/{id}` | Change an order status |
 
 The app uses SQLite to keep setup small. Run one app container at a time. The course exercise is about detecting and handling an incident, not scaling the database.
+
+## Observability
+
+`docker compose up` also starts an OpenTelemetry Collector, Prometheus, Loki, Tempo, and Grafana. The app exports traces, metrics, and logs via OTLP to the Collector, which fans traces out to Tempo, metrics to Prometheus, and logs to Loki. Config lives under `observability/`.
+
+Open Grafana at <http://127.0.0.1:3000> (default login `admin` / `admin`) for the pre-provisioned "Order Tracker - Requests" dashboard, which shows request counts and error rates by route and status code. Prometheus, Loki, and Tempo are also pre-wired as Grafana datasources.
