@@ -94,3 +94,42 @@ def test_auth_required_when_password_set(client, monkeypatch):
         headers={"Authorization": f"Basic {creds}"},
     )
     assert authenticated.status_code == 200
+
+
+def test_extract_assistant_result_parses_cost_and_default_model(tmp_path, monkeypatch):
+    monkeypatch.setattr(main, "ASSISTANT_MODEL", "")
+    incident_dir = tmp_path / "incident"
+    incident_dir.mkdir()
+    (incident_dir / "assistant.log").write_text(
+        "Fixed the bug.\n\n"
+        "Changes    +1 -1\n"
+        "AI Credits 23.52 (1m 45s)\n"
+        "Tokens     up 567.6k, down 3.1k\n"
+        "Resume     copilot --resume=30c871d6-cabd-41aa-9013-18e2fcc03984\n"
+    )
+    debug_dir = incident_dir / "assistant-logs"
+    debug_dir.mkdir()
+    (debug_dir / "process-1.log").write_text(
+        "2026-09-30T07:18:05.896Z [INFO] Using default model: claude-sonnet-5\n"
+    )
+
+    result = main._extract_assistant_result(incident_dir)
+
+    assert result == {
+        "model": "claude-sonnet-5",
+        "ai_credits": 23.52,
+        "duration": "1m 45s",
+        "changes": "+1 -1",
+        "resume_id": "30c871d6-cabd-41aa-9013-18e2fcc03984",
+    }
+
+
+def test_extract_assistant_result_prefers_explicit_model(tmp_path, monkeypatch):
+    monkeypatch.setattr(main, "ASSISTANT_MODEL", "gpt-5-mini")
+    incident_dir = tmp_path / "incident"
+    incident_dir.mkdir()
+    (incident_dir / "assistant.log").write_text("AI Credits 1.0 (5s)\n")
+
+    result = main._extract_assistant_result(incident_dir)
+
+    assert result["model"] == "gpt-5-mini"

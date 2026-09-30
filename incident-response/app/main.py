@@ -126,6 +126,33 @@ def _should_invoke(fingerprint: str) -> bool:
     return True
 
 
+_CREDITS_RE = re.compile(r"AI Credits\s+([\d.]+)\s*\(([^)]+)\)")
+_CHANGES_RE = re.compile(r"Changes\s+(\+\d+\s+-\d+)")
+_RESUME_RE = re.compile(r"Resume\s+copilot --resume=(\S+)")
+_MODEL_RE = re.compile(r"Using (?:default )?model:\s*(\S+)")
+
+
+def _extract_assistant_result(incident_dir: Path) -> dict[str, Any]:
+    """Pull model/cost/outcome out of the assistant's own logs for this incident."""
+    result: dict[str, Any] = {"model": ASSISTANT_MODEL or None}
+    log_path = incident_dir / "assistant.log"
+    log_text = log_path.read_text(errors="ignore") if log_path.exists() else ""
+    if match := _CREDITS_RE.search(log_text):
+        result["ai_credits"] = float(match.group(1))
+        result["duration"] = match.group(2)
+    if match := _CHANGES_RE.search(log_text):
+        result["changes"] = match.group(1)
+    if match := _RESUME_RE.search(log_text):
+        result["resume_id"] = match.group(1)
+    if not result["model"]:
+        # No explicit ASSISTANT_MODEL: the chosen default only appears in the CLI's own debug logs.
+        for debug_file in (incident_dir / "assistant-logs").glob("*.log"):
+            if match := _MODEL_RE.search(debug_file.read_text(errors="ignore")):
+                result["model"] = match.group(1)
+                break
+    return result
+
+
 async def _invoke_assistant(incident_dir: Path, endpoint: str) -> None:
     prompt = (
         f"Grafana alert fired for order-tracker, endpoint {endpoint}. Incident context is in "
@@ -158,6 +185,12 @@ async def _invoke_assistant(incident_dir: Path, endpoint: str) -> None:
             except asyncio.TimeoutError:
                 logger.warning("Assistant run for %s timed out; killing it", incident_dir.name)
                 process.kill()
+        result = _extract_assistant_result(incident_dir)
+        (incident_dir / "assistant-result.json").write_text(json.dumps(result, indent=2))
+        logger.info(
+            "Assistant finished for %s: model=%s ai_credits=%s changes=%s",
+            incident_dir.name, result.get("model"), result.get("ai_credits"), result.get("changes"),
+        )
     except FileNotFoundError:
         logger.error("Assistant command %r not found; skipping auto-invoke", ASSISTANT_COMMAND)
     except Exception:
