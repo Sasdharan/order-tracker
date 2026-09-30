@@ -62,6 +62,8 @@ services:
     environment:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      ALERT_WEBHOOK_USERNAME: ${ALERT_WEBHOOK_USERNAME:-grafana}
+      ALERT_WEBHOOK_PASSWORD: ${ALERT_WEBHOOK_PASSWORD:-order-tracker-alerts}
     volumes:
       - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
@@ -72,12 +74,41 @@ services:
       - tempo
     restart: unless-stopped
 
+  incident-response:
+    image: incident-response:${ORDER_TRACKER_TAG:-local}
+    build: ./incident-response
+    ports:
+      - "127.0.0.1:${INCIDENT_RESPONSE_PORT:-8001}:8001"
+    environment:
+      LOKI_URL: http://loki:3100
+      TEMPO_URL: http://tempo:3200
+      INCIDENTS_DIR: /data/incidents
+      REPO_DIR: /workspace
+      ALERT_WEBHOOK_USERNAME: ${ALERT_WEBHOOK_USERNAME:-grafana}
+      ALERT_WEBHOOK_PASSWORD: ${ALERT_WEBHOOK_PASSWORD:-order-tracker-alerts}
+      AUTO_INVOKE_ASSISTANT: ${AUTO_INVOKE_ASSISTANT:-true}
+      ASSISTANT_COMMAND: ${ASSISTANT_COMMAND:-copilot}
+      ASSISTANT_TIMEOUT_SECONDS: ${ASSISTANT_TIMEOUT_SECONDS:-1800}
+      ASSISTANT_COOLDOWN_SECONDS: ${ASSISTANT_COOLDOWN_SECONDS:-600}
+      GH_TOKEN: ${GH_TOKEN:-}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      OTEL_SERVICE_NAME: incident-response
+    volumes:
+      - incidents:/data/incidents
+      - .:/workspace
+    depends_on:
+      - loki
+      - tempo
+      - otel-collector
+    restart: unless-stopped
+
 volumes:
   orders:
   prometheus-data:
   loki-data:
   tempo-data:
   grafana-data:
+  incidents:
 
 networks:
   default:
