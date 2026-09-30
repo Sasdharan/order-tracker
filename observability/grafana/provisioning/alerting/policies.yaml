@@ -1,0 +1,14 @@
+apiVersion: 1
+
+policies:
+  - orgId: 1
+    receiver: grafana-default-email
+    group_by: ["alertname"]
+    routes:
+      - receiver: incident-response
+        object_matchers:
+          - ["alertname", "=", "Order Tracker - 5xx errors by route"]
+        group_by: ["http_route"]
+        group_wait: 30s
+        group_interval: 5m
+        repeat_interval: 1h
