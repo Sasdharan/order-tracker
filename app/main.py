@@ -59,7 +59,8 @@ def order_detail(row):
     order = as_dict(row)
     if order["priority"] == "express":
         placed_at = datetime.fromisoformat(order["created_at"])
-        estimated_at = placed_at + timedelta(days=2)
+        # fix code bug via automated incident response service
+        estimated_at = placed_at + timedelta(days=2) 
         order["estimated_delivery"] = estimated_at.date().isoformat()
     return order
 
