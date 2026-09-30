@@ -40,3 +40,5 @@ The app uses SQLite to keep setup small. Run one app container at a time. The co
 `docker compose up` also starts an OpenTelemetry Collector, Prometheus, Loki, Tempo, and Grafana. The app exports traces, metrics, and logs via OTLP to the Collector, which fans traces out to Tempo, metrics to Prometheus, and logs to Loki. Config lives under `observability/`.
 
 Open Grafana at <http://127.0.0.1:3000> (default login `admin` / `admin`) for the pre-provisioned "Order Tracker - Requests" dashboard, which shows request counts and error rates by route and status code. Prometheus, Loki, and Tempo are also pre-wired as Grafana datasources.
+
+A provisioned Grafana alert rule ("Order Tracker - 5xx errors by route", in the "Order Tracker" folder) fires per route when 5xx responses occur in the last 5 minutes. It links back to the dashboard panel, and treats a quiet period (no 5xx at all) as healthy rather than "no data".

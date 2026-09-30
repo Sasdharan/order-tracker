@@ -1,0 +1,64 @@
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: order-tracker
+    folder: Order Tracker
+    interval: 1m
+    rules:
+      - uid: order-tracker-5xx-errors
+        title: Order Tracker - 5xx errors by route
+        condition: C
+        for: 1m
+        # No 5xx in the window is a legitimate "all clear", not a missing-data problem.
+        noDataState: OK
+        execErrState: Alerting
+        annotations:
+          summary: "{{ $labels.http_route }} is returning 5xx errors"
+          description: >-
+            {{ $labels.http_route }} had {{ printf "%.0f" $values.A.Value }} 5xx
+            responses in the last 5 minutes.
+          dashboard_url: http://localhost:3000/d/order-tracker-requests/order-tracker-requests?viewPanel=5
+          __dashboardUid__: order-tracker-requests
+          __panelId__: "5"
+        labels:
+          severity: critical
+        data:
+          - refId: A
+            datasourceUid: prometheus-ds
+            relativeTimeRange:
+              from: 300
+              to: 0
+            model:
+              refId: A
+              expr: >-
+                sum by (http_route) (increase(http_server_request_duration_seconds_count{http_response_status_code=~"5.."}[5m]))
+              instant: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: C
+            datasourceUid: __expr__
+            relativeTimeRange:
+              from: 300
+              to: 0
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [0]
+                  operator:
+                    type: and
+                  query:
+                    params: ["C"]
+                  reducer:
+                    type: last
+                    params: []
+                  type: query
+              datasource:
+                type: __expr__
+                uid: __expr__
+              intervalMs: 1000
+              maxDataPoints: 43200
