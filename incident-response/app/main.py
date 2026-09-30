@@ -22,6 +22,10 @@ LOOKBACK_MINUTES = int(os.getenv("LOOKBACK_MINUTES", "15"))
 
 AUTO_INVOKE_ASSISTANT = os.getenv("AUTO_INVOKE_ASSISTANT", "true").lower() == "true"
 ASSISTANT_COMMAND = os.getenv("ASSISTANT_COMMAND", "copilot")
+# Empty by default: inherits whatever model the CLI/account defaults to. Set to a
+# specific model name (see `copilot help config`) to pin cost/capability, e.g. a
+# cheaper tier like "gpt-5-mini" or "claude-haiku-4.5".
+ASSISTANT_MODEL = os.getenv("ASSISTANT_MODEL", "")
 ASSISTANT_TIMEOUT_SECONDS = int(os.getenv("ASSISTANT_TIMEOUT_SECONDS", "1800"))
 ASSISTANT_COOLDOWN_SECONDS = int(os.getenv("ASSISTANT_COOLDOWN_SECONDS", "600"))
 
@@ -124,20 +128,25 @@ def _should_invoke(fingerprint: str) -> bool:
 
 async def _invoke_assistant(incident_dir: Path, endpoint: str) -> None:
     prompt = (
-        f"An automated Grafana alert fired for the order-tracker service, endpoint {endpoint}. "
-        f"Read {incident_dir}/summary.md, alert.json, logs.json, and traces.json in that directory "
-        "to understand the incident, investigate the root cause in this repository, and propose or "
-        f"apply a fix. Write your findings to {incident_dir}/investigation.md."
+        f"Grafana alert fired for order-tracker, endpoint {endpoint}. Incident context is in "
+        f"{incident_dir} (summary.md, alert.json, logs.json, traces.json) - skim it briefly, "
+        "don't restate it back. Reproduce the bug with the minimum necessary commands, find the "
+        "root cause, then immediately apply the smallest correct code fix in this repository. "
+        "Do not ask clarifying questions. Skip writing a long report - after applying the fix, "
+        f"append a 3-5 line summary (root cause + fix) to {incident_dir}/investigation.md and stop."
     )
     cmd = [
         ASSISTANT_COMMAND,
         "-p", prompt,
         "--allow-all-tools",
+        "--no-ask-user",
         "-C", REPO_DIR,
         "--add-dir", str(INCIDENTS_DIR),
         "--log-dir", str(incident_dir / "assistant-logs"),
         "--share", str(incident_dir / "session.md"),
     ]
+    if ASSISTANT_MODEL:
+        cmd += ["--model", ASSISTANT_MODEL]
     logger.info("Starting coding assistant for incident %s", incident_dir.name)
     try:
         with (incident_dir / "assistant.log").open("w") as log_file:
